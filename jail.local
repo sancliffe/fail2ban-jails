@@ -1,0 +1,11 @@
+[DEFAULT]
+bantime  = 15m
+findtime = 30m
+maxretry = 3
+banaction = ufw
+
+# Whitelist your Android device and trusted IPs to prevent accidental lockouts
+ignoreip = 127.0.0.1/8 ::1 185.92.26.134 89.251.0.216 89.251.0.146 89.251.0.89 66.207.201.110
+
+# Global action (AbuseIPDB removed from here to prevent API rate-limit errors)
+action = %(action_)s
