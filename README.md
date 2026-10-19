@@ -6,12 +6,23 @@ Custom [Fail2ban](https://github.com/fail2ban/fail2ban) jail configuration for a
 
 ```
 .
-├── jail.local              # Global defaults (ban times, whitelist, ban action)
-└── jail.d/
-    ├── apache.conf         # Apache access-log jails for scanners and probes
-    ├── defaults-debian.conf# Enables the sshd jail (Debian default)
-    ├── recidive.conf       # Longer bans for repeat offenders + AbuseIPDB reporting
-    └── services.conf       # sshd, dovecot and postfix jails
+├── jail.local                        # Global defaults (ban times, whitelist, ban action)
+├── jail.d/
+│   ├── apache.conf                   # Apache access-log jails for scanners and probes
+│   ├── defaults-debian.conf          # Enables the sshd jail (Debian default)
+│   ├── recidive.conf                 # Longer bans for repeat offenders + AbuseIPDB reporting
+│   └── services.conf                 # sshd, dovecot and postfix jails
+└── filter.d/
+    ├── apache-badstatus.conf         # Custom: 400/408 responses
+    ├── apache-connect-probe.conf     # Custom: CONNECT proxy probes
+    ├── apache-env.conf               # Custom: requests for .env files
+    ├── apache-php-scan.conf          # Custom: EMPTY, needs a failregex
+    ├── apache-scanner.conf           # Custom: repeated 404s
+    ├── apache-web-stratum.conf       # Custom: EMPTY, and name doesn't match the jail (see below)
+    ├── dovecot.conf                  # Copy of the stock Fail2ban filter
+    ├── postfix.conf                  # Copy of the stock Fail2ban filter
+    ├── recidive.conf                 # Copy of the stock Fail2ban filter
+    └── sshd.conf                     # Copy of the stock Fail2ban filter
 ```
 
 ## Defaults (`jail.local`)
@@ -83,7 +94,10 @@ The `recidive` jail watches `/var/log/fail2ban.log`. An IP banned twice within 3
    ```sh
    sudo cp jail.local /etc/fail2ban/jail.local
    sudo cp jail.d/*.conf /etc/fail2ban/jail.d/
+   sudo cp filter.d/*.conf /etc/fail2ban/filter.d/
    ```
+
+   The copies of `dovecot`, `postfix`, `recidive` and `sshd` in `filter.d/` will override the ones shipped with your Fail2ban package. If you'd rather keep the package versions, copy only the `apache-*` filters.
 
 4. Edit the configuration (see below), then validate and reload:
 
@@ -107,16 +121,24 @@ The `recidive` jail watches `/var/log/fail2ban.log`. An IP banned twice within 3
 
 ## Custom filters
 
-The Apache jails reference filters that are **not included in this repository**:
+Each jail needs a matching `/etc/fail2ban/filter.d/<name>.conf` file. The Apache filters in `filter.d/` match the access log as follows:
 
-- `apache-env`
-- `apache-connect-probe`
-- `apache-badstatus`
-- `apache-php-scan`
-- `web-stratum`
-- `apache-scanner`
+| Filter | What it matches |
+| --- | --- |
+| `apache-env` | `GET`/`POST`/`HEAD` requests for paths containing `.env` that return 400, 403 or 404 |
+| `apache-connect-probe` | `CONNECT` requests (open-proxy probing) |
+| `apache-badstatus` | Responses with status 400 or 408 |
+| `apache-scanner` | Any `GET`/`POST`/`HEAD` that returns 404 |
 
-Each jail needs a matching `/etc/fail2ban/filter.d/<name>.conf` file. Without it, Fail2ban will refuse to start those jails. Add your filter definitions to `filter.d/` and test them against your logs before enabling:
+The `dovecot`, `postfix`, `recidive` and `sshd` filters are copies of the ones shipped with Fail2ban.
+
+### Known issues
+
+- **`apache-php-scan` is empty.** `filter.d/apache-php-scan.conf` has no content, so it has no `failregex` and the `apache-php-scan` jail will fail to start. Add a `[Definition]` section with a `failregex`, or set `enabled = false` for that jail.
+- **`apache-web-stratum` points at the wrong filter name.** The jail sets `filter = web-stratum`, but the file is `filter.d/apache-web-stratum.conf` (which is also empty). Rename the file or change the jail's `filter` line so they match, and add a `failregex`.
+- **`apache-scanner` is strict.** It bans after 5 requests that return 404 within 60 seconds, so a legitimate client hitting a few broken links can be banned for 24 hours.
+
+Because a jail with a broken filter can stop Fail2ban from loading, run `sudo fail2ban-client -t` after installing. Test filters against your logs before enabling:
 
 ```sh
 sudo fail2ban-regex /var/log/apache2/access.log /etc/fail2ban/filter.d/apache-scanner.conf
